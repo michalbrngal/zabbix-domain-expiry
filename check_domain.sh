@@ -705,6 +705,10 @@ get_expiration() {
     # Uses get_iso_date to split by ":" and extract YYYY-MM-DD before "T"
     /Expiration Date:.*[0-9]{4}-[0-9]{2}-[0-9]{2}T/ { print get_iso_date($0, ":", 2); exit }
 
+    # Matches "Expiration Date:   YYYY-MM-DD" (e.g., "Expiration Date:   2026-06-05")
+    # Used by .mx TLD WHOIS; extracts YYYY-MM-DD via regex match
+    /Expiration Date:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]]*$/ { match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/); print substr($0, RSTART, RLENGTH); exit }
+
     # Matches "Expiration Date: DD.MM.YYYY" (e.g., "Expiration Date: 31.12.2025")
     # Splits last field ($NF) by ".", formats as YYYY-MM-DD using fields 3, 2, 1
     /Expiration [Dd]ate:.*[0-9]{2}\.[0-9]{2}\.[0-9]{4}/ { split($NF, a, "."); printf("%04d-%02d-%02d", a[3], a[2], a[1]); exit }
