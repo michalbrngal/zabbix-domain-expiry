@@ -721,6 +721,10 @@ get_expiration() {
     # Splits last field ($NF) by "/", formats as YYYY-MM-DD using fields 1, 2, 3
     /\[Expires on\].*[0-9]{4}\/[0-9]{2}\/[0-9]{2}/ { split($NF, a, "/"); printf("%04d-%02d-%02d", a[1], a[2], a[3]); exit }
 
+    # Matches "Record expires on: Day Mon DD hh:mm:ss YYYY" (e.g., "Record expires on: Wed Oct 28 18:12:09 2026")
+    # Used by .kg TLD WHOIS; formats as YYYY-MM-DD using field 8 (year), field 5 (month via mon2moy), field 6 (day)
+    /Record expires on:.*[A-Za-z]{3} [A-Za-z]{3}[[:space:]]+[0-9]+[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2} [0-9]{4}/ { printf("%s-%02d-%02d", $8, mon2moy($5), $6); exit }
+
     # Matches "Record expires on YYYY-MM-DD" (e.g., "Record expires on 2025-12-31")
     # Extracts YYYY-MM-DD via regex match, outputs directly
     /Record expires on[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/); print substr($0, RSTART, RLENGTH); exit }
