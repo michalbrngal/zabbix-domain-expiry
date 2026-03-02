@@ -431,35 +431,16 @@ parse_arguments() {
     if [ "$debug" = "true" ]; then
         echo "INFO [$(date +'%H:%M:%S')]: Entering parse_arguments with args: $@" >&2
     fi
-    local short_opts="hVd:w:c:P:s:r:z"
-    local long_opts="help,version,domain:,warning:,critical:,path:,whois-server:,rdap-server:,debug"
     local default_warning="30" default_critical="7"
     local processed_args=$(preprocess_args "$@")
     if [ "$debug" = "true" ]; then
         echo "INFO [$(date +'%H:%M:%S')]: Processed args: $processed_args" >&2
     fi
 
-    set +e
-    args=$(getopt -o "$short_opts" --long "$long_opts" -u -n "$PROGRAM" -- $processed_args 2>"$error_file")
-    getopt_rc=$?
+    # Use preprocessed args directly instead of GNU getopt (not available on macOS)
+    set -- $processed_args
     if [ "$debug" = "true" ]; then
-        echo "INFO [$(date +'%H:%M:%S')]: getopt returned: $args, rc: $getopt_rc" >&2
-    fi
-    if [ $getopt_rc -ne 0 ]; then
-        echo "ERROR [$(date +'%H:%M:%S')]: getopt failed to parse arguments: $(cat "$error_file")" >&2
-        die "$STATE_UNKNOWN" "State: UNKNOWN ; Invalid arguments"
-    fi
-    eval set -- "$args" 2>"$error_file"
-    eval_rc=$?
-    if [ "$debug" = "true" ]; then
-        echo "INFO [$(date +'%H:%M:%S')]: eval set -- returned rc: $eval_rc" >&2
-    fi
-    if [ $eval_rc -ne 0 ]; then
-        echo "ERROR [$(date +'%H:%M:%S')]: eval set -- failed: $(cat "$error_file")" >&2
-        die "$STATE_UNKNOWN" "State: UNKNOWN ; Argument processing failed"
-    fi
-    if [ "$debug" = "true" ]; then
-        echo "INFO [$(date +'%H:%M:%S')]: After eval set --: $@" >&2
+        echo "INFO [$(date +'%H:%M:%S')]: After setting args: $@" >&2
     fi
 
     warning="$default_warning"
@@ -860,21 +841,25 @@ get_expiration() {
     # Splits third field ($3) by "-", formats as YYYY-MM-DD using fields 1, 2, 3
     /Expired on:.*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { split($3, a, "-"); printf("%s-%02d-%02d", a[1], a[2], a[3]); exit }
 
+    # Matches "Expires on..............: YYYY-Mon-DD." (e.g., "Expires on..............: 2027-Mar-01.")
+    # Used by .com.tr TLD WHOIS; strips trailing dot, splits by "-", converts month abbreviation to number
+    /Expires on\.+:.*[0-9]{4}-[A-Za-z]{3}-[0-9]{2}/ { sub(/\.$/, "", $NF); split($NF, a, "-"); printf("%s-%02d-%02d", a[1], mon2moy(a[2]), a[3]); exit }
+
     # Matches "Expires.*YYYY-MM-DD" (e.g., "Expires 2025-12-31")
     # Splits second field ($2) by "-", formats as YYYY-MM-DD using fields 1, 2, 3
     /Expires.*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { split($2, a, "-"); printf("%s-%02d-%02d", a[1], a[2], a[3]); exit }
 
     # Matches "expires: DD.MM.YYYY hh:mm:ss" or "expires.: DD.MM.YYYY hh:mm:ss" (e.g., "expires: 31.12.2025 23:59:59")
     # Removes prefix, splits first field ($1) by ".", formats as YYYY-MM-DD using fields 3, 2, 1
-    /^expires\.*:.*[0-9][0-9]?\.[0-9][0-9]?\.[0-9]{4}\s[0-9]{2}:[0-9]{2}:[0-9]{2}/ { sub(/^expires\.*: */, "", $0); split($1, a, "."); printf("%04d-%02d-%02d", a[3], a[2], a[1]); exit }
+    /^expires\.*:.*[0-9][0-9]?\.[0-9][0-9]?\.[0-9]{4}[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}/ { sub(/^expires\.*: */, "", $0); split($1, a, "."); printf("%04d-%02d-%02d", a[3], a[2], a[1]); exit }
 
     # Matches "expires: YYYY-MM-DD hh:mm:ss" (e.g., "expires: 2025-12-31 23:59:59")
     # Extracts YYYY-MM-DD via regex match, outputs directly
-    /expires:.*[0-9]{4}-[0-9]{2}-[0-9]{2}\s[0-9]{2}:[0-9]{2}:[0-9]{2}/ { match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/); print substr($0, RSTART, RLENGTH); exit }
+    /expires:.*[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}:[0-9]{2}/ { match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/); print substr($0, RSTART, RLENGTH); exit }
 
     # Matches "expires: YYYY-MM-DD hh:mm" (e.g., "expires: 2025-12-31 23:59")
     # Splits line by space, splits first field (a[1]) by "-", formats as YYYY-MM-DD
-    /expires:.*[0-9]{4}-[0-9]{2}-[0-9]{2}\s[0-9]{2}:[0-9]{2}/ { split($0, a, " "); split(a[1], b, "-"); printf("%s-%s-%s", b[1], b[2], b[3]); exit }
+    /expires:.*[0-9]{4}-[0-9]{2}-[0-9]{2}[[:space:]][0-9]{2}:[0-9]{2}/ { split($0, a, " "); split(a[1], b, "-"); printf("%s-%s-%s", b[1], b[2], b[3]); exit }
 
     # Matches "renewal:" to set flag for next line processing
     # Sets renewal variable to 1, skips to next line
@@ -890,7 +875,7 @@ get_expiration() {
 
     # Matches "Expiration Date: YYYY-MM-DD\s" (e.g., "Expiration Date: 2025-12-31 ")
     # Uses get_iso_date to split by ":" and extract YYYY-MM-DD
-    $0 ~ "Expiration Date:\s" DATE_ISO_LIKE { print get_iso_date($0, ":", 2); exit }
+    $0 ~ "Expiration Date:[[:space:]]" DATE_ISO_LIKE { print get_iso_date($0, ":", 2); exit }
 
     # Matches "Expiration Time: YYYY-MM-DD hh:mm:ss" (e.g., "Expiration Time: 2025-12-31 23:59:59")
     # Splits third field ($3) by "-", formats as YYYY-MM-DD using fields 1, 2, 3
@@ -898,7 +883,7 @@ get_expiration() {
 
     # Matches "billed until: YYYY-MM-DDThh:mm:ss" (e.g., "billed until: 2025-12-31T23:59:59")
     # Uses get_iso_date to split by ":" and extract YYYY-MM-DD before "T"
-    $0 ~ "billed[ ]*until:\s" DATE_ISO_FULL { print get_iso_date($0, ":", 2); exit }
+    $0 ~ "billed[ ]*until:[[:space:]]" DATE_ISO_FULL { print get_iso_date($0, ":", 2); exit }
     ' "$outfile" 2>"$error_file")
     awk_rc=$?
     set -e
@@ -988,7 +973,8 @@ if ! echo "$expiration" | grep -q -E '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'; then
 fi
 
 # Calculate seconds since epoch for expiration date at midnight UTC
-expseconds=$(date -u +%s --date="$expiration 00:00:00 UTC" 2>/dev/null) || die "$STATE_UNKNOWN" "State: UNKNOWN ; Failed to parse expiration date: $expiration"
+# Try BSD date (macOS) first, then fall back to GNU date (Linux)
+expseconds=$(date -j -u -f "%Y-%m-%d %H:%M:%S" "$expiration 00:00:00" "+%s" 2>/dev/null || date -u -d "$expiration 00:00:00 UTC" +%s 2>/dev/null) || die "$STATE_UNKNOWN" "State: UNKNOWN ; Failed to parse expiration date: $expiration"
 nowseconds=$(date -u +%s 2>/dev/null) || die "$STATE_UNKNOWN" "State: UNKNOWN ; Failed to get current time"
 expdays=$(( (expseconds - nowseconds) / 86400 ))
 expdate="$expiration"
