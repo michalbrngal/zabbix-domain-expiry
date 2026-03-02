@@ -821,6 +821,10 @@ get_expiration() {
     # Outputs last field ($NF) directly as YYYY-MM-DD
     /(Valid-date|Expir(es|y)):.*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { print $NF; exit }
 
+    # Matches "Expiry : YYYY-MM-DD" (e.g., "Expiry : 2032-10-28")
+    # Used by .tm TLD WHOIS (space before colon); extracts YYYY-MM-DD via regex match
+    /Expiry[[:space:]]+:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/); print substr($0, RSTART, RLENGTH); exit }
+
     # Matches "[State] YYYY/MM/DD/YYYY" (e.g., "[State] 2025/12/31")
     # Removes parentheses from last field ($NF), splits by "/", formats as YYYY-MM-DD using fields 1, 2, 3
     /\[State\].*[0-9]{4}\/[0-9]{2}\/[0-9]{2}/ { gsub(/[()]/, "", $NF); split($NF, a, "/"); printf("%s-%s-%s", a[1], a[2], a[3]); exit }
@@ -844,10 +848,6 @@ get_expiration() {
     # Matches "Expired on: YYYY-MM-DD-DD" (e.g., "Expired on: 2025-12-31")
     # Splits third field ($3) by "-", formats as YYYY-MM-DD using fields 1, 2, 3
     /Expired on:.*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { split($3, a, "-"); printf("%s-%02d-%02d", a[1], a[2], a[3]); exit }
-
-    # Matches "Expires on..............: YYYY-Mon-DD." (e.g., "Expires on..............: 2027-Mar-01.")
-    # Used by .com.tr TLD WHOIS; strips trailing dot, splits by "-", converts month abbreviation to number
-    /Expires on\.+:.*[0-9]{4}-[A-Za-z]{3}-[0-9]{2}/ { sub(/\.$/, "", $NF); split($NF, a, "-"); printf("%s-%02d-%02d", a[1], mon2moy(a[2]), a[3]); exit }
 
     # Matches "Expires on..............: YYYY-Mon-DD." (e.g., "Expires on..............: 2027-Mar-01.")
     # Used by .com.tr TLD WHOIS; strips trailing dot, splits by "-", converts month abbreviation to number
