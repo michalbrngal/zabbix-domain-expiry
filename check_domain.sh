@@ -845,6 +845,10 @@ get_expiration() {
     # Used by .com.tr TLD WHOIS; strips trailing dot, splits by "-", converts month abbreviation to number
     /Expires on\.+:.*[0-9]{4}-[A-Za-z]{3}-[0-9]{2}/ { sub(/\.$/, "", $NF); split($NF, a, "-"); printf("%s-%02d-%02d", a[1], mon2moy(a[2]), a[3]); exit }
 
+    # Matches "Expires on..............: YYYY-Mon-DD." (e.g., "Expires on..............: 2027-Mar-01.")
+    # Used by .com.tr TLD WHOIS; strips trailing dot, splits by "-", converts month abbreviation to number
+    /Expires on\.+:.*[0-9]{4}-[A-Za-z]{3}-[0-9]{2}/ { sub(/\.$/, "", $NF); split($NF, a, "-"); printf("%s-%02d-%02d", a[1], mon2moy(a[2]), a[3]); exit }
+
     # Matches "Expires.*YYYY-MM-DD" (e.g., "Expires 2025-12-31")
     # Splits second field ($2) by "-", formats as YYYY-MM-DD using fields 1, 2, 3
     /Expires.*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { split($2, a, "-"); printf("%s-%02d-%02d", a[1], a[2], a[3]); exit }
