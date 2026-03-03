@@ -909,6 +909,42 @@ get_expiration() {
         die "$STATE_UNKNOWN" "State: UNKNOWN ; Failed to parse WHOIS data for $domain"
     fi
     if [ -z "$expiration" ]; then
+        local tld="${domain##*.}"
+        case "$tld" in
+            no)
+                # Fallback for .no: no expiry field in WHOIS; domain renews yearly on the anniversary of Created:
+                # Extract the last "Created:" date (uppercase, domain-level), then compute the next anniversary
+                if [ "$debug" = "true" ]; then
+                    echo "INFO [$(date +'%H:%M:%S')]: No expiration date in WHOIS for $domain (.no TLD), computing next anniversary of Created: date" >&2
+                fi
+                set +e
+                created_date=$($awk '/Created:[[:space:]]*[0-9]{4}-[0-9]{2}-[0-9]{2}/ { match($0, /[0-9]{4}-[0-9]{2}-[0-9]{2}/); last = substr($0, RSTART, RLENGTH) } END { if (last) print last }' "$outfile" 2>"$error_file")
+                set -e
+                if [ "$debug" = "true" ]; then
+                    echo "INFO [$(date +'%H:%M:%S')]: Created: date='$created_date'" >&2
+                fi
+                if [ -n "$created_date" ]; then
+                    # Extract MM-DD from created date and compute next anniversary
+                    created_month=$(echo "$created_date" | cut -d'-' -f2)
+                    created_day=$(echo "$created_date" | cut -d'-' -f3)
+                    current_year=$(date -u +%Y)
+                    candidate="${current_year}-${created_month}-${created_day}"
+                    # Compare candidate to today: if already past, use next year
+                    today=$(date -u +%Y-%m-%d)
+                    if [ "$candidate" \< "$today" ] || [ "$candidate" = "$today" ]; then
+                        next_year=$(( current_year + 1 ))
+                        expiration="${next_year}-${created_month}-${created_day}"
+                    else
+                        expiration="$candidate"
+                    fi
+                    if [ "$debug" = "true" ]; then
+                        echo "INFO [$(date +'%H:%M:%S')]: Next .no anniversary expiry='$expiration'" >&2
+                    fi
+                fi
+                ;;
+        esac
+    fi
+    if [ -z "$expiration" ]; then
         if [ "$debug" = "true" ]; then
             echo "INFO [$(date +'%H:%M:%S')]: No expiration date found in WHOIS data for $domain" >&2
         fi
