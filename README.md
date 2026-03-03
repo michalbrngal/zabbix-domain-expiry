@@ -22,8 +22,8 @@ Monitor domain expiration dates using RDAP or WHOIS protocols.
   - `jq`: For parsing RDAP JSON responses.
 
 ## Tested on
-- **OS**: RHEL/Rocky (bash) and Debian/Ubuntu (dash)
-- **Zabbix Server**: 6.4
+- **OS**: RHEL/Rocky (bash), Debian/Ubuntu (dash), MacOS (zsh)
+- **Zabbix Server**: 6.4+
 - **Note**: Shell script is *mostly* POSIX compliant so should be widely compatible
 
 ## Installation (Zabbix server)
@@ -31,16 +31,24 @@ Monitor domain expiration dates using RDAP or WHOIS protocols.
 ### Install Dependencies
 Ensure the required dependencies are installed on your system.
 
-**For RHEL/Rocky**:
+**For RHEL/Rocky/Alma**:
 ```bash
 sudo dnf install -y epel-release
 sudo dnf install -y curl coreutils whois grep gawk jq
+sudo dns install -y snap
+sudo systemctl enable --now snapd.socket
+sudo snap install rdap
 ```
 
 **For Debian/Ubuntu**:
 ```bash
 sudo apt update
-sudo apt install -y curl coreutils whois grep gawk jq
+sudo apt install -y curl coreutils whois grep gawk jq rdap
+```
+
+**For MacOS**:
+```bash
+brew install rdap whois coreutils
 ```
 
 ### Setup Steps
