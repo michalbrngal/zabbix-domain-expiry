@@ -596,13 +596,27 @@ run_whois() {
     setup_whois
     local output error
     if [ "$whois_server_override" = "0" ]; then
-        if [ "$debug" = "true" ]; then
-            echo "INFO [$(date +'%H:%M:%S')]: Running whois for $domain without specific server" >&2
-        fi
-        set +e
-        output=$("$whois" "$domain" 2>&1)
-        error=$?
-        set -e
+        case "$domain" in
+            *.co.jp)
+                # .co.jp requires whois.jprs.jp with /e suffix for English output
+                if [ "$debug" = "true" ]; then
+                    echo "INFO [$(date +'%H:%M:%S')]: Running whois for $domain via whois.jprs.jp with /e suffix" >&2
+                fi
+                set +e
+                output=$("$whois" -h whois.jprs.jp "${domain}/e" 2>&1)
+                error=$?
+                set -e
+                ;;
+            *)
+                if [ "$debug" = "true" ]; then
+                    echo "INFO [$(date +'%H:%M:%S')]: Running whois for $domain without specific server" >&2
+                fi
+                set +e
+                output=$("$whois" "$domain" 2>&1)
+                error=$?
+                set -e
+                ;;
+        esac
     else
         if [ "$debug" = "true" ]; then
             echo "INFO [$(date +'%H:%M:%S')]: Running whois for $domain with server $whois_server_override" >&2
@@ -639,6 +653,39 @@ run_whois() {
 get_expiration() {
     local outfile="$1"
     local expiration
+    # .co.jp: skip main awk entirely; use [Registered Date] as yearly anniversary
+    case "$domain" in
+        *.co.jp)
+            if [ "$debug" = "true" ]; then
+                echo "INFO [$(date +'%H:%M:%S')]: .co.jp domain, extracting [Registered Date] for anniversary expiry" >&2
+            fi
+            set +e
+            created_date=$($awk '/\[Registered Date\][[:space:]]*[0-9]{4}\/[0-9]{2}\/[0-9]{2}/ { match($0, /[0-9]{4}\/[0-9]{2}\/[0-9]{2}/); d = substr($0, RSTART, RLENGTH); gsub("/", "-", d); print d; exit }' "$outfile" 2>"$error_file")
+            set -e
+            if [ -n "$created_date" ]; then
+                created_month=$(echo "$created_date" | cut -d'-' -f2)
+                created_day=$(echo "$created_date" | cut -d'-' -f3)
+                current_year=$(date -u +%Y)
+                candidate="${current_year}-${created_month}-${created_day}"
+                today=$(date -u +%Y-%m-%d)
+                if [ "$candidate" \< "$today" ] || [ "$candidate" = "$today" ]; then
+                    next_year=$(( current_year + 1 ))
+                    expiration="${next_year}-${created_month}-${created_day}"
+                else
+                    expiration="$candidate"
+                fi
+                if [ "$debug" = "true" ]; then
+                    echo "INFO [$(date +'%H:%M:%S')]: Next .co.jp anniversary expiry='$expiration'" >&2
+                fi
+            fi
+            if [ -z "$expiration" ]; then
+                die "$STATE_UNKNOWN" "State: UNKNOWN ; No [Registered Date] found for $domain"
+            fi
+            expiration=$(echo "$expiration" | tr -d '[:space:]')
+            echo "$expiration"
+            return 0
+            ;;
+    esac
     if [ "$debug" = "true" ]; then
         echo "INFO [$(date +'%H:%M:%S')]: Running awk on $outfile" >&2
     fi
@@ -909,9 +956,8 @@ get_expiration() {
         die "$STATE_UNKNOWN" "State: UNKNOWN ; Failed to parse WHOIS data for $domain"
     fi
     if [ -z "$expiration" ]; then
-        local tld="${domain##*.}"
-        case "$tld" in
-            no)
+        case "$domain" in
+            *.no)
                 # Fallback for .no: no expiry field in WHOIS; domain renews yearly on the anniversary of Created:
                 # Extract the last "Created:" date (uppercase, domain-level), then compute the next anniversary
                 if [ "$debug" = "true" ]; then
